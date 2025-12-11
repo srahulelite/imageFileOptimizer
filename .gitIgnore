@@ -1,0 +1,25 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local storage
+storage/
+storage/*
+!.gitkeep
+
+# OS / IDE
+*.zip
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Node
+node_modules/
+
+# Env
+.env

@@ -1,0 +1,9 @@
+Flask>=2.2
+Flask-SocketIO>=5.3
+redis>=4.5
+rq>=1.13
+Pillow>=10.0
+ffmpeg-python==0.2.0
+python-dotenv>=1.0
+gunicorn
+Flask-Limiter

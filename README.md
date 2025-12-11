@@ -1,2 +1,3 @@
-# imageFileOptimizer
-This project is about to build native file optimizer.
+# Image/Video File Optimizer
+
+Project skeleton (Windows-friendly).
