@@ -2,53 +2,239 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Image/Video File Optimizer — Sandbox</title>
+  <title>Image/Video File Optimizer — Multi-file Estimator</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width:720px; margin:40px auto; }
+    body { font-family: Arial, sans-serif; max-width:980px; margin:30px auto; }
     .box { padding:16px; border:1px solid #ddd; border-radius:6px; }
-    label { display:block; margin-bottom:8px; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; }
+    th, td { padding:8px 10px; text-align:left; border-bottom:1px solid #eee; }
+    th { background:#f7f7f7; font-weight:700; }
+    .muted { color:#666; font-size:0.9em }
+    #controls { display:flex; gap:12px; align-items:center; margin-top:12px; }
+    #controls > * { margin:0; }
+    #status { margin-top:12px; color:#333; }
+    .small { font-size:0.9em; color:#555; }
   </style>
 </head>
 <body>
-  <h1>Image/Video File Optimizer — UI (placeholder)</h1>
+  <h1>Image/Video File Optimizer — Estimator (Updated)</h1>
 
   <div class="box">
-    <label>Select files (multiple allowed):</label>
-    <input id="files" type="file" multiple />
-    <div style="margin-top:10px;">
-      <label>Quality:</label>
-      <select id="quality">
-        <option value="avg" selected>Average</option>
-        <option value="low">Low</option>
-        <option value="high">High</option>
-      </select>
-    </div>
-    <div style="margin-top:12px;">
-      <button id="uploadBtn">Upload (will call stub)</button>
+    <label>Select image files (jpg/png/webp)...</label>
+    <input id="files" type="file" accept="image/*" multiple />
+
+    <div id="controls">
+      <div>
+        <label>Bulk Quality:</label>
+        <select id="quality">
+          <option value="avg" selected>Average</option>
+          <option value="low">Low (more compression)</option>
+          <option value="high">High (less compression)</option>
+        </select>
+      </div>
+
+      <div style="margin-left:auto">
+        <button id="uploadBtn" disabled>Optimize & Download ZIP</button>
+      </div>
     </div>
 
-    <div id="status" style="margin-top:12px;color:#555"></div>
+    <div id="summary" class="small muted"></div>
+
+    <table id="estTable" aria-live="polite">
+      <thead>
+        <tr><th>File</th><th>Original</th><th>Estimate</th><th>Ratio</th><th>Status</th></tr>
+      </thead>
+      <tbody id="estBody">
+      </tbody>
+    </table>
+
+    <div id="status"></div>
   </div>
 
 <script>
-document.getElementById('uploadBtn').addEventListener('click', async () => {
-  const filesEl = document.getElementById('files');
-  const quality = document.getElementById('quality').value;
-  const status = document.getElementById('status');
+/*
+Improved client-side estimator:
+- Converts thumbnails to JPEG (so encoder is consistent with server-side JPEG output).
+- Produces two thumbnails (800px and 400px max side), compresses both at chosen quality,
+  computes ratios compressed_thumb / original_thumb, averages them to reduce variance.
+- Applies the average ratio to original file size to produce expected size.
+Notes:
+- Still an estimate. PNGs, animated GIFs, and vector-like images may behave differently.
+- Server-side may further change size due to subsampling, different encoders, metadata stripping, etc.
+*/
 
-  if (!filesEl.files.length) { status.textContent = 'Pick one or more files first.'; return; }
+const fileEl = document.getElementById('files');
+const qualityEl = document.getElementById('quality');
+const uploadBtn = document.getElementById('uploadBtn');
+const estBody = document.getElementById('estBody');
+const summary = document.getElementById('summary');
+const statusEl = document.getElementById('status');
+
+const QUALITY_FLOAT = { low: 0.35, avg: 0.62, high: 0.88 }; // tuned empirically for better match
+
+function humanSize(bytes) {
+  if (bytes === 0) return "0 B";
+  const units = ['B','KB','MB','GB'];
+  let i=0;
+  while (bytes >= 1024 && i < units.length-1) { bytes /= 1024; i++; }
+  return bytes.toFixed(bytes >= 100 ? 0 : 1) + ' ' + units[i];
+}
+
+function clearTable() {
+  estBody.innerHTML = '';
+  summary.textContent = '';
+  statusEl.textContent = '';
+}
+
+function addRowPlaceholder(idx, file) {
+  const tr = document.createElement('tr');
+  tr.id = 'row_' + idx;
+  tr.innerHTML = `
+    <td>${file.name}</td>
+    <td>${humanSize(file.size)}</td>
+    <td id="est_${idx}">-</td>
+    <td id="ratio_${idx}">-</td>
+    <td id="stat_${idx}">Waiting</td>
+  `;
+  estBody.appendChild(tr);
+}
+
+async function estimateSizeForFile(file, quality) {
+  // load image bitmap
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch (e) {
+    return { error: 'Unsupported or corrupt image' };
+  }
+
+  // helper to get compressed thumb size for a given maxSide
+  async function compressThumb(maxSide, qf) {
+    let w = bitmap.width;
+    let h = bitmap.height;
+    const scale = Math.min(1, maxSide / Math.max(w, h));
+    w = Math.max(1, Math.round(w * scale));
+    h = Math.max(1, Math.round(h * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+
+    // original thumbnail as JPEG at quality=1.0 to get baseline thumbnail bytes (consistent)
+    const originalThumbBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 1.0));
+    const originalThumbSize = originalThumbBlob ? originalThumbBlob.size : Math.min(file.size, 10000);
+
+    // compressed thumbnail at chosen quality - convert to JPEG for consistent comparison
+    const compressedThumbBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', qf));
+    const compressedThumbSize = compressedThumbBlob ? compressedThumbBlob.size : originalThumbSize;
+
+    return { originalThumbSize, compressedThumbSize };
+  }
+
+  try {
+    const qf = QUALITY_FLOAT[quality] || 0.62;
+    // Use two scales and average ratios to reduce noisy variance
+    const r1 = await compressThumb(800, qf);
+    const r2 = await compressThumb(400, qf);
+    const ratio1 = r1.compressedThumbSize / r1.originalThumbSize;
+    const ratio2 = r2.compressedThumbSize / r2.originalThumbSize;
+    const ratio = (ratio1 + ratio2) / 2;
+
+    // clamp ratio to reasonable bounds to avoid absurd estimates
+    const clampedRatio = Math.max(0.05, Math.min(1.0, ratio));
+    const expected = Math.max(80, Math.round(file.size * clampedRatio)); // floor min 80 bytes
+    return { expected, ratio: clampedRatio, details: { r1, r2 } };
+  } catch (err) {
+    return { error: err.toString() };
+  }
+}
+
+async function runEstimates() {
+  const files = Array.from(fileEl.files || []);
+  clearTable();
+  if (!files.length) { uploadBtn.disabled = true; summary.textContent = 'No files selected'; return; }
+
+  uploadBtn.disabled = true;
+  statusEl.textContent = 'Estimating...';
+  const quality = qualityEl.value;
+
+  let totalOrig = 0, totalExpected = 0;
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    totalOrig += f.size;
+    addRowPlaceholder(i, f);
+    document.getElementById('stat_' + i).textContent = 'Estimating...';
+    try {
+      const res = await estimateSizeForFile(f, quality);
+      if (res.error) {
+        document.getElementById('est_' + i).textContent = 'Error';
+        document.getElementById('ratio_' + i).textContent = '-';
+        document.getElementById('stat_' + i).textContent = res.error;
+      } else {
+        document.getElementById('est_' + i).textContent = humanSize(res.expected);
+        document.getElementById('ratio_' + i).textContent = (res.ratio * 100).toFixed(0) + '%';
+        document.getElementById('stat_' + i).textContent = 'Ready';
+        totalExpected += res.expected;
+      }
+    } catch (err) {
+      document.getElementById('est_' + i).textContent = 'Error';
+      document.getElementById('ratio_' + i).textContent = '-';
+      document.getElementById('stat_' + i).textContent = 'Estimation failed';
+    }
+  }
+
+  summary.textContent = `Total original: ${humanSize(totalOrig)} — Estimated after compression: ${humanSize(totalExpected)}`;
+  statusEl.textContent = 'Estimation complete.';
+  uploadBtn.disabled = false;
+}
+
+// auto estimate on file select and quality change
+fileEl.addEventListener('change', () => {
+  runEstimates();
+});
+qualityEl.addEventListener('change', () => {
+  // re-run only if files exist
+  if (fileEl.files && fileEl.files.length) runEstimates();
+});
+
+// upload flow remains similar to earlier
+uploadBtn.addEventListener('click', async () => {
+  const files = Array.from(fileEl.files || []);
+  if (!files.length) { statusEl.textContent = 'Pick files first'; return; }
+  uploadBtn.disabled = true;
+  statusEl.textContent = 'Uploading & processing...';
 
   const fd = new FormData();
-  for (let i=0;i<filesEl.files.length;i++) fd.append('files[]', filesEl.files[i]);
-  fd.append('quality', quality);
+  for (let i=0;i<files.length;i++) fd.append('files[]', files[i]);
+  fd.append('quality', qualityEl.value);
 
-  status.textContent = 'Uploading... (will hit stub endpoint)';
   try {
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    const j = await res.json();
-    status.textContent = 'Response: ' + (j.message || JSON.stringify(j));
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/zip')) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const cd = res.headers.get('content-disposition') || '';
+      let filename = 'optimized_batch.zip';
+      const m = /filename\*=UTF-8\'\'(.+)$/.exec(cd) || /filename="?([^";]+)"?/.exec(cd);
+      if (m) filename = decodeURIComponent(m[1] || m[2]);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      statusEl.textContent = 'Download ready. Completed.';
+    } else {
+      let j;
+      try { j = await res.json(); } catch(e) { j = { message: 'Unknown response' }; }
+      statusEl.textContent = 'Server response: ' + (j.message || JSON.stringify(j));
+    }
   } catch (err) {
-    status.textContent = 'Error: ' + err;
+    statusEl.textContent = 'Error: ' + err;
+  } finally {
+    uploadBtn.disabled = false;
   }
 });
 </script>
