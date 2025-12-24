@@ -1,242 +1,356 @@
 ﻿<!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Image/Video File Optimizer — Multi-file Estimator</title>
-  <style>
-    body { font-family: Arial, sans-serif; max-width:980px; margin:30px auto; }
-    .box { padding:16px; border:1px solid #ddd; border-radius:6px; }
-    table { width:100%; border-collapse:collapse; margin-top:12px; }
-    th, td { padding:8px 10px; text-align:left; border-bottom:1px solid #eee; }
-    th { background:#f7f7f7; font-weight:700; }
-    .muted { color:#666; font-size:0.9em }
-    #controls { display:flex; gap:12px; align-items:center; margin-top:12px; }
-    #controls > * { margin:0; }
-    #status { margin-top:12px; color:#333; }
-    .small { font-size:0.9em; color:#555; }
-  </style>
+<meta charset="utf-8" />
+<title>File Optimizer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<style>
+:root {
+  --primary:#2563eb;
+  --danger:#dc2626;
+  --muted:#6b7280;
+  --bg:#f8fafc;
+  --card:#ffffff;
+  --border:#e5e7eb;
+}
+
+* { box-sizing:border-box; }
+body {
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  background:var(--bg);
+}
+
+.container {
+  max-width:1000px;
+  margin:40px auto;
+  padding:0 20px;
+}
+
+.tabs { display:flex; gap:6px; margin-bottom:20px; }
+.tab {
+  padding:10px 18px;
+  border-radius:8px;
+  cursor:pointer;
+  background:#e5e7eb;
+  font-weight:600;
+}
+.tab.active { background:var(--primary); color:#fff; }
+
+.card {
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:20px;
+}
+
+.controls {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:12px;
+}
+
+.hint p{ margin:6px 0 0 0; color:var(--muted); font-size:14px; }
+
+.table { width:100%; border-collapse:collapse; margin-top:12px; }
+.table th,.table td { padding:10px; border-bottom:1px solid var(--border); text-align: left; }
+
+.error { color:var(--danger); margin:10px 0px;}
+button { padding:10px 16px; border-radius:8px; border:none; background:var(--primary); color:white; cursor:pointer; }
+button:disabled { opacity:.5; cursor:not-allowed; }
+select { padding:6px 10px; border-radius:6px; }
+
+</style>
 </head>
+
 <body>
-  <h1>Image/Video File Optimizer — Estimator (Updated)</h1>
+<div class="container">
 
-  <div class="box">
-    <label>Select image files (jpg/png/webp)...</label>
-    <input id="files" type="file" accept="image/*" multiple />
+<h1>File Optimizer</h1>
 
-    <div id="controls">
-      <div>
-        <label>Bulk Quality:</label>
-        <select id="quality">
-          <option value="avg" selected>Average</option>
-          <option value="low">Low (more compression)</option>
-          <option value="high">High (less compression)</option>
-        </select>
-      </div>
+<div class="tabs">
+  <div class="tab active" data-tab="image">Images</div>
+  <div class="tab" data-tab="video">Videos</div>
+</div>
 
-      <div style="margin-left:auto">
-        <button id="uploadBtn" disabled>Optimize & Download ZIP</button>
-      </div>
-    </div>
-
-    <div id="summary" class="small muted"></div>
-
-    <table id="estTable" aria-live="polite">
-      <thead>
-        <tr><th>File</th><th>Original</th><th>Estimate</th><th>Ratio</th><th>Status</th></tr>
-      </thead>
-      <tbody id="estBody">
-      </tbody>
-    </table>
-
-    <div id="status"></div>
+<!-- IMAGE TAB -->
+<div class="card" id="imageTab">
+  <div class="controls">
+    <strong>Optimize Images</strong>
   </div>
+  <div class="controls" style="margin-top:12px;">
+  <select id="imageQuality">
+    <option value="low">Low quality (smaller size)</option>
+    <option value="avg" selected>Average quality</option>
+    <option value="high">High quality (larger size)</option>
+  </select>
+</div>
+
+  <input type="file" id="imageInput" multiple accept="image/*" />
+  <div class="hint">
+  <p>*Image limits:
+  • Max 5 images
+  • Max 30 MB per image
+  • Max 150 MB total</p>
+</div>
+
+  <table class="table">
+    <thead><tr><th>File</th><th>Size</th><th>Delete</th></tr></thead>
+    <tbody id="imageTable"></tbody>
+  </table>
+
+  <div id="imageError" class="error"></div>
+  <button id="imageSubmit" disabled>Optimize Images</button>
+</div>
+
+<!-- VIDEO TAB -->
+<div class="card" id="videoTab" style="display:none">
+  <div class="controls">
+    <strong>Optimize Videos</strong>
+  </div>
+  <div class="controls" style="margin-top:12px;">
+  <select id="videoQuality">
+    <option value="low">Low quality (smaller size)</option>
+    <option value="avg" selected>Average quality</option>
+    <option value="high">High quality (larger size)</option>
+  </select>
+</div>
+
+  <input type="file" id="videoInput" multiple accept="video/*" />
+  <div class="hint">
+  <p>*Video limits:
+  • Max 2 videos
+  • Max 150 MB per video
+  • Max 300 MB total </p>
+</div>
+
+  <table class="table">
+    <thead><tr><th>File</th><th>Size</th><th>Delete</th></tr></thead>
+    <tbody id="videoTable"></tbody>
+  </table>
+
+  <div id="videoError" class="error"></div>
+  <button id="videoSubmit" disabled>Optimize Videos</button>
+</div>
+
+</div>
 
 <script>
-/*
-Improved client-side estimator:
-- Converts thumbnails to JPEG (so encoder is consistent with server-side JPEG output).
-- Produces two thumbnails (800px and 400px max side), compresses both at chosen quality,
-  computes ratios compressed_thumb / original_thumb, averages them to reduce variance.
-- Applies the average ratio to original file size to produce expected size.
-Notes:
-- Still an estimate. PNGs, animated GIFs, and vector-like images may behave differently.
-- Server-side may further change size due to subsampling, different encoders, metadata stripping, etc.
-*/
-
-const fileEl = document.getElementById('files');
-const qualityEl = document.getElementById('quality');
-const uploadBtn = document.getElementById('uploadBtn');
-const estBody = document.getElementById('estBody');
-const summary = document.getElementById('summary');
-const statusEl = document.getElementById('status');
-
-const QUALITY_FLOAT = { low: 0.35, avg: 0.62, high: 0.88 }; // tuned empirically for better match
-
-function humanSize(bytes) {
-  if (bytes === 0) return "0 B";
-  const units = ['B','KB','MB','GB'];
-  let i=0;
-  while (bytes >= 1024 && i < units.length-1) { bytes /= 1024; i++; }
-  return bytes.toFixed(bytes >= 100 ? 0 : 1) + ' ' + units[i];
-}
-
-function clearTable() {
-  estBody.innerHTML = '';
-  summary.textContent = '';
-  statusEl.textContent = '';
-}
-
-function addRowPlaceholder(idx, file) {
-  const tr = document.createElement('tr');
-  tr.id = 'row_' + idx;
-  tr.innerHTML = `
-    <td>${file.name}</td>
-    <td>${humanSize(file.size)}</td>
-    <td id="est_${idx}">-</td>
-    <td id="ratio_${idx}">-</td>
-    <td id="stat_${idx}">Waiting</td>
-  `;
-  estBody.appendChild(tr);
-}
-
-async function estimateSizeForFile(file, quality) {
-  // load image bitmap
-  let bitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch (e) {
-    return { error: 'Unsupported or corrupt image' };
-  }
-
-  // helper to get compressed thumb size for a given maxSide
-  async function compressThumb(maxSide, qf) {
-    let w = bitmap.width;
-    let h = bitmap.height;
-    const scale = Math.min(1, maxSide / Math.max(w, h));
-    w = Math.max(1, Math.round(w * scale));
-    h = Math.max(1, Math.round(h * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(bitmap, 0, 0, w, h);
-
-    // original thumbnail as JPEG at quality=1.0 to get baseline thumbnail bytes (consistent)
-    const originalThumbBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 1.0));
-    const originalThumbSize = originalThumbBlob ? originalThumbBlob.size : Math.min(file.size, 10000);
-
-    // compressed thumbnail at chosen quality - convert to JPEG for consistent comparison
-    const compressedThumbBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', qf));
-    const compressedThumbSize = compressedThumbBlob ? compressedThumbBlob.size : originalThumbSize;
-
-    return { originalThumbSize, compressedThumbSize };
-  }
-
-  try {
-    const qf = QUALITY_FLOAT[quality] || 0.62;
-    // Use two scales and average ratios to reduce noisy variance
-    const r1 = await compressThumb(800, qf);
-    const r2 = await compressThumb(400, qf);
-    const ratio1 = r1.compressedThumbSize / r1.originalThumbSize;
-    const ratio2 = r2.compressedThumbSize / r2.originalThumbSize;
-    const ratio = (ratio1 + ratio2) / 2;
-
-    // clamp ratio to reasonable bounds to avoid absurd estimates
-    const clampedRatio = Math.max(0.05, Math.min(1.0, ratio));
-    const expected = Math.max(80, Math.round(file.size * clampedRatio)); // floor min 80 bytes
-    return { expected, ratio: clampedRatio, details: { r1, r2 } };
-  } catch (err) {
-    return { error: err.toString() };
-  }
-}
-
-async function runEstimates() {
-  const files = Array.from(fileEl.files || []);
-  clearTable();
-  if (!files.length) { uploadBtn.disabled = true; summary.textContent = 'No files selected'; return; }
-
-  uploadBtn.disabled = true;
-  statusEl.textContent = 'Estimating...';
-  const quality = qualityEl.value;
-
-  let totalOrig = 0, totalExpected = 0;
-  for (let i = 0; i < files.length; i++) {
-    const f = files[i];
-    totalOrig += f.size;
-    addRowPlaceholder(i, f);
-    document.getElementById('stat_' + i).textContent = 'Estimating...';
-    try {
-      const res = await estimateSizeForFile(f, quality);
-      if (res.error) {
-        document.getElementById('est_' + i).textContent = 'Error';
-        document.getElementById('ratio_' + i).textContent = '-';
-        document.getElementById('stat_' + i).textContent = res.error;
-      } else {
-        document.getElementById('est_' + i).textContent = humanSize(res.expected);
-        document.getElementById('ratio_' + i).textContent = (res.ratio * 100).toFixed(0) + '%';
-        document.getElementById('stat_' + i).textContent = 'Ready';
-        totalExpected += res.expected;
-      }
-    } catch (err) {
-      document.getElementById('est_' + i).textContent = 'Error';
-      document.getElementById('ratio_' + i).textContent = '-';
-      document.getElementById('stat_' + i).textContent = 'Estimation failed';
-    }
-  }
-
-  summary.textContent = `Total original: ${humanSize(totalOrig)} — Estimated after compression: ${humanSize(totalExpected)}`;
-  statusEl.textContent = 'Estimation complete.';
-  uploadBtn.disabled = false;
-}
-
-// auto estimate on file select and quality change
-fileEl.addEventListener('change', () => {
-  runEstimates();
-});
-qualityEl.addEventListener('change', () => {
-  // re-run only if files exist
-  if (fileEl.files && fileEl.files.length) runEstimates();
+/* ---------------- TAB SWITCH ---------------- */
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    imageTab.style.display = tab.dataset.tab === 'image' ? 'block' : 'none';
+    videoTab.style.display = tab.dataset.tab === 'video' ? 'block' : 'none';
+  };
 });
 
-// upload flow remains similar to earlier
-uploadBtn.addEventListener('click', async () => {
-  const files = Array.from(fileEl.files || []);
-  if (!files.length) { statusEl.textContent = 'Pick files first'; return; }
-  uploadBtn.disabled = true;
-  statusEl.textContent = 'Uploading & processing...';
+/* ---------------- UTIL ---------------- */
+const human = b => b<1024?`${b} B`:b<1e6?`${(b/1024).toFixed(1)} KB`:`${(b/1e6).toFixed(1)} MB`;
+
+/* ================= IMAGE STATE ================= */
+let imageState = [];
+const imageInput = document.getElementById('imageInput');
+const imageTable = document.getElementById('imageTable');
+const imageSubmit = document.getElementById('imageSubmit');
+const imageError = document.getElementById('imageError');
+
+imageInput.onchange = () => {
+  if (!imageInput.files.length) return;
+  [...imageInput.files].forEach(f => imageState.push(f));
+  imageInput.value = '';
+  renderImages();
+};
+
+function renderImages() {
+  imageTable.innerHTML = '';
+  imageSubmit.disabled = true;
+  imageError.textContent = '';
+
+  if (!imageState.length) return;
+
+  let total = 0, err=false;
+  imageState.forEach((f,i) => {
+    total += f.size;
+    if (f.size > 30 * 1024 * 1024) err=true;
+    imageTable.innerHTML += `
+      <tr>
+        <td>${f.name}</td>
+        <td>${human(f.size)}</td>
+        <td><button onclick="imageRemove(${i})">✕</button></td>
+      </tr>`;
+  });
+
+  if (
+    imageState.length > 5 ||
+    total > 150 * 1024 * 1024 ||
+    imageState.some(f => f.size > 30 * 1024 * 1024)
+  ) {
+    imageError.textContent = 'Image limits exceeded.';
+    return;
+  }
+  imageSubmit.disabled = false;
+}
+
+function imageRemove(i){ imageState.splice(i,1); renderImages(); }
+
+/* ================= VIDEO STATE ================= */
+let videoState = [];
+const videoInput = document.getElementById('videoInput');
+const videoTable = document.getElementById('videoTable');
+const videoSubmit = document.getElementById('videoSubmit');
+const videoError = document.getElementById('videoError');
+
+videoInput.onchange = () => {
+  if (!videoInput.files.length) return;
+  [...videoInput.files].forEach(f => videoState.push(f));
+  videoInput.value = '';
+  renderVideos();
+};
+
+function renderVideos() {
+  videoTable.innerHTML = '';
+  videoSubmit.disabled = true;
+  videoError.textContent = '';
+
+  if (!videoState.length) return;
+
+  let total = 0, err=false;
+  videoState.forEach((f,i) => {
+    total += f.size;
+    if (f.size > 150*1024*1024) err=true;
+    videoTable.innerHTML += `
+      <tr>
+        <td>${f.name}</td>
+        <td>${human(f.size)}</td>
+        <td><button onclick="videoRemove(${i})">✕</button></td>
+      </tr>`;
+  });
+
+  if (videoState.length>2 || total>300*1024*1024 || err) {
+    videoError.textContent = 'Video limits exceeded.';
+    return;
+  }
+  videoSubmit.disabled = false;
+}
+
+function videoRemove(i){ videoState.splice(i,1); renderVideos(); }
+
+/* ================= IMAGE UPLOAD ================= */
+imageSubmit.onclick = async () => {
+  showProgress('Optimizing images…');
 
   const fd = new FormData();
-  for (let i=0;i<files.length;i++) fd.append('files[]', files[i]);
-  fd.append('quality', qualityEl.value);
+  imageState.forEach(f => fd.append('files[]', f));
+  fd.append('quality', document.getElementById('imageQuality').value);
 
   try {
-    const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok && contentType.includes('application/zip')) {
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const cd = res.headers.get('content-disposition') || '';
-      let filename = 'optimized_batch.zip';
-      const m = /filename\*=UTF-8\'\'(.+)$/.exec(cd) || /filename="?([^";]+)"?/.exec(cd);
-      if (m) filename = decodeURIComponent(m[1] || m[2]);
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      statusEl.textContent = 'Download ready. Completed.';
-    } else {
-      let j;
-      try { j = await res.json(); } catch(e) { j = { message: 'Unknown response' }; }
-      statusEl.textContent = 'Server response: ' + (j.message || JSON.stringify(j));
-    }
-  } catch (err) {
-    statusEl.textContent = 'Error: ' + err;
+    const res = await fetch('/api/upload', { method:'POST', body:fd });
+    if (!res.ok) throw new Error('Image optimization failed');
+
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'optimized_images.zip';
+    a.click();
+
+    imageState = [];
+    renderImages();
+  } catch (e) {
+    imageError.textContent = e.message;
   } finally {
-    uploadBtn.disabled = false;
+    hideProgress();
   }
-});
+};
+
+
+
+videoSubmit.onclick = async () => {
+  showProgress('Optimizing videos (this may take time)…');
+
+  const fd = new FormData();
+  videoState.forEach(f => fd.append('files[]', f));
+  fd.append('quality', document.getElementById('videoQuality').value);
+
+  try {
+    const res = await fetch('/api/video/optimize', {
+      method:'POST',
+      body:fd
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.message || 'Video optimization failed');
+    }
+
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'optimized_videos.zip';
+    a.click();
+
+    videoState = [];
+    renderVideos();
+  } catch (e) {
+    videoError.textContent = e.message;
+  } finally {
+    hideProgress();
+  }
+};
+
+
+function showProgress(text) {
+  document.getElementById('progressText').textContent = text || 'Processing…';
+  document.getElementById('progressModal').style.display = 'flex';
+}
+
+function hideProgress() {
+  document.getElementById('progressModal').style.display = 'none';
+}
+
+
 </script>
+
+<!-- Progress Modal -->
+<div id="progressModal" style="
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.45);
+  z-index:9999;
+  align-items:center;
+  justify-content:center;
+">
+  <div style="
+    background:#fff;
+    padding:24px 32px;
+    border-radius:12px;
+    min-width:300px;
+    text-align:center;
+  ">
+    <div style="
+      width:36px;
+      height:36px;
+      border:4px solid #e5e7eb;
+      border-top:4px solid #2563eb;
+      border-radius:50%;
+      margin:0 auto 16px;
+      animation:spin 1s linear infinite;
+    "></div>
+    <div id="progressText" style="font-weight:600;">
+      Processing…
+    </div>
+  </div>
+</div>
+
+<style>
+@keyframes spin {
+  to { transform:rotate(360deg); }
+}
+</style>
+
 </body>
 </html>
