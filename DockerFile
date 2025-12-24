@@ -20,5 +20,5 @@ COPY src/ src/
 ENV PORT=8080
 EXPOSE 8080
 
-# Start app
+# Start app 1
 CMD ["python", "src/app.py"]
